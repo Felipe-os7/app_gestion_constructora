@@ -1,0 +1,7 @@
+Django
+pillow
+pandas
+gunicorn
+mysqlclient
+djangorestframework
+python-dotenv
