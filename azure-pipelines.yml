@@ -10,9 +10,6 @@ pr:
       - main
       - develop
 
-pool:
-  vmImage: 'ubuntu-24.04'
-
 variables:
   PYTHON_VERSION: '3.13'
   DJANGO_SETTINGS_MODULE: 'app_gestion.settings'
