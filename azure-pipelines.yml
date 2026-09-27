@@ -10,8 +10,10 @@ pr:
       - main
       - develop
 
+pool:
+  name: 'Default'
+
 variables:
-  PYTHON_VERSION: '3.13'
   DJANGO_SETTINGS_MODULE: 'app_gestion.settings'
   MYSQL_DATABASE: 'test_appgestion'
   MYSQL_USER: 'app_user'
@@ -28,21 +30,11 @@ stages:
   - job: TestAndSecurity
     displayName: 'Pruebas Unitarias y DevSecOps'
     steps:
-    - task: UsePythonVersion@0
-      inputs:
-        versionSpec: $(PYTHON_VERSION)
-      displayName: 'Configurar entorno con Python $(PYTHON_VERSION)'
-
-    - script: |
-        sudo apt-get update
-        sudo apt-get install -y default-libmysqlclient-dev pkg-config
-      displayName: 'Instalar dependencias del sistema para mysqlclient'
-
     - script: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install flake8 pytest pytest-django
-      displayName: 'Instalar librerías del proyecto'
+        python -m pip install -r requirements.txt
+        python -m pip install flake8 pytest pytest-django
+      displayName: 'Instalar librerías Python del proyecto'
 
     - script: |
         docker run --name mysql-ci \
