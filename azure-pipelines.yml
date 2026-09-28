@@ -75,7 +75,7 @@ stages:
           --env MYSQL_PASSWORD="$(MYSQL_PASSWORD)" `
           --env MYSQL_ROOT_PASSWORD="$(MYSQL_ROOT_PASSWORD)" `
           --publish 3306:3306 `
-          --detach mysql:8.0
+          --detach mysql:8.4
 
         $ready = $false
         for ($attempt = 1; $attempt -le 60; $attempt++) {
