@@ -1,8 +1,11 @@
 from django.conf import settings
 settings.ALLOWED_HOSTS = list(getattr(settings, 'ALLOWED_HOSTS', [])) + ['testserver']
+import pytest
 from django.test import Client
 from django.contrib.auth.models import User
 from core.models import Proyecto,Cuadrilla,Integrante,SolicitudReasignacion
+
+pytestmark = pytest.mark.django_db
 
 print('== test script start ==')
 
