@@ -79,6 +79,7 @@ stages:
           --env MYSQL_USER="$(MYSQL_USER)" `
           --env MYSQL_PASSWORD="$(MYSQL_PASSWORD)" `
           --env MYSQL_ROOT_PASSWORD="$(MYSQL_ROOT_PASSWORD)" `
+          --env MYSQL_ROOT_HOST="%" `
           --publish 3306:3306 `
           --detach mysql:8.4
         if ($LASTEXITCODE -ne 0) {
@@ -87,7 +88,7 @@ stages:
 
         $ready = $false
         for ($attempt = 1; $attempt -le 60; $attempt++) {
-          docker exec mysql-ci mysqladmin ping --host=localhost --user=root --password="$(MYSQL_ROOT_PASSWORD)" --silent
+          docker exec mysql-ci mysqladmin ping --host=127.0.0.1 --protocol=tcp --user=root --password="$(MYSQL_ROOT_PASSWORD)" --silent
           if ($LASTEXITCODE -eq 0) {
             $ready = $true
             break
@@ -100,7 +101,7 @@ stages:
           docker logs mysql-ci
           exit 1
         }
-        docker exec mysql-ci mysql --user=root --password="$(MYSQL_ROOT_PASSWORD)" --execute="GRANT ALL PRIVILEGES ON *.* TO '$(MYSQL_USER)'@'%'; FLUSH PRIVILEGES;"
+        docker exec mysql-ci mysql --host=127.0.0.1 --protocol=tcp --user=root --password="$(MYSQL_ROOT_PASSWORD)" --execute="GRANT ALL PRIVILEGES ON *.* TO '$(MYSQL_USER)'@'%'; FLUSH PRIVILEGES;"
         if ($LASTEXITCODE -ne 0) {
           throw 'No se pudieron conceder permisos al usuario de MySQL para crear la base temporal de pytest.'
         }
