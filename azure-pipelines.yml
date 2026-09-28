@@ -69,6 +69,11 @@ stages:
       displayName: 'Instalar librerías Python del proyecto'
 
     - powershell: |
+        docker rm -f mysql-ci 2>$null
+        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1) {
+          throw 'No se pudo limpiar un contenedor MySQL anterior.'
+        }
+
         docker run --name mysql-ci `
           --env MYSQL_DATABASE="$(MYSQL_DATABASE)" `
           --env MYSQL_USER="$(MYSQL_USER)" `
@@ -76,6 +81,9 @@ stages:
           --env MYSQL_ROOT_PASSWORD="$(MYSQL_ROOT_PASSWORD)" `
           --publish 3306:3306 `
           --detach mysql:8.4
+        if ($LASTEXITCODE -ne 0) {
+          throw 'No se pudo iniciar el contenedor MySQL de CI.'
+        }
 
         $ready = $false
         for ($attempt = 1; $attempt -le 60; $attempt++) {
