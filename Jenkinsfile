@@ -83,7 +83,7 @@ pipeline {
                         }
 
                         $mysqlVersion = docker exec $env:MYSQL_CONTAINER mysql --version
-                        if ($mysqlVersion -notmatch 'Ver 8\.4\.') {
+                        if (-not $mysqlVersion.Contains('8.4')) {
                             docker logs $env:MYSQL_CONTAINER
                             throw "La imagen MySQL usada no es 8.4: $mysqlVersion"
                         }
