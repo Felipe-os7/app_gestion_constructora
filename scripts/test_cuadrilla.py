@@ -48,7 +48,9 @@ def test_cuadrilla_and_reasignacion_flow():
             cargo="operario",
         )
 
-    u = User.objects.get(username="testuser")
+    u, _ = User.objects.get_or_create(username="testuser")
+    u.set_password("test-password")
+    u.save(update_fields=["password"])
     i_le, _ = Integrante.objects.get_or_create(
         usuario=u,
         defaults={
@@ -68,6 +70,7 @@ def test_cuadrilla_and_reasignacion_flow():
     c2.save()
 
     client = Client()
+    client.force_login(u)
     login_ok = client.login(username="testuser", password="TestPass123")
     print("login", login_ok)
 
