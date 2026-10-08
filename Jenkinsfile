@@ -11,13 +11,11 @@ pipeline {
         DJANGO_SETTINGS_MODULE = 'app_gestion.settings'
         DJANGO_DEBUG = 'False'
         DJANGO_SECRET_KEY = 'ci-only-secret'
-        DB_NAME = 'test_appgestion'
+        DB_NAME = 'constructora'
         DB_USER = 'app_user'
-        DB_PASSWORD = 'app_secure_password'
         DB_HOST = '127.0.0.1'
         DB_PORT = '3306'
         MYSQL_CONTAINER = 'jenkins-mysql-ci'
-        MYSQL_ROOT_PASSWORD = 'root_secure_password'
     }
 
     stages {
@@ -65,48 +63,52 @@ pipeline {
 
         stage('Iniciar MySQL') {
             steps {
-                powershell '''
-                    docker rm -f $env:MYSQL_CONTAINER 2>$null
-                    docker run --name $env:MYSQL_CONTAINER `
-                        --env MYSQL_DATABASE=$env:DB_NAME `
-                        --env MYSQL_USER=$env:DB_USER `
-                        --env MYSQL_PASSWORD=$env:DB_PASSWORD `
-                        --env MYSQL_ROOT_PASSWORD=$env:MYSQL_ROOT_PASSWORD `
-                        --env MYSQL_ROOT_HOST=% `
-                        --publish 3306:3306 `
-                        --detach mysql:8.4
-                    if ($LASTEXITCODE -ne 0) {
-                        throw 'No se pudo iniciar MySQL 8.4 en Docker.'
-                    }
-
-                    $ready = $false
-                    for ($attempt = 1; $attempt -le 60; $attempt++) {
-                        docker exec $env:MYSQL_CONTAINER mysqladmin ping `
-                            --host=127.0.0.1 --protocol=tcp `
-                            --user=root --password=$env:MYSQL_ROOT_PASSWORD --silent
-                        if ($LASTEXITCODE -eq 0) {
-                            $ready = $true
-                            break
+                withCredentials([
+                    string(credentialsId: 'mysql-root-password', variable: 'MYSQL_ROOT_PASSWORD'),
+                    string(credentialsId: 'mysql-app-password', variable: 'DB_PASSWORD')
+                ]) {
+                    powershell '''
+                        docker rm -f $env:MYSQL_CONTAINER 2>$null
+                        docker run --name $env:MYSQL_CONTAINER `
+                            --env MYSQL_DATABASE=$env:DB_NAME `
+                            --env MYSQL_USER=$env:DB_USER `
+                            --env MYSQL_PASSWORD=$env:DB_PASSWORD `
+                            --env MYSQL_ROOT_PASSWORD=$env:MYSQL_ROOT_PASSWORD `
+                            --env MYSQL_ROOT_HOST=% `
+                            --publish 3306:3306 `
+                            --detach mysql:8.4
+                        if ($LASTEXITCODE -ne 0) {
+                            throw 'No se pudo iniciar MySQL 8.4 en Docker.'
                         }
-                        Start-Sleep -Seconds 2
-                    }
 
-                    if (-not $ready) {
-                        docker logs $env:MYSQL_CONTAINER
-                        throw 'MySQL no estuvo disponible a tiempo.'
-                    }
+                        $ready = $false
+                        for ($attempt = 1; $attempt -le 60; $attempt++) {
+                            docker exec $env:MYSQL_CONTAINER mysqladmin ping `
+                                --host=127.0.0.1 --protocol=tcp `
+                                --user=root --password=$env:MYSQL_ROOT_PASSWORD --silent
+                            if ($LASTEXITCODE -eq 0) {
+                                $ready = $true
+                                break
+                            }
+                            Start-Sleep -Seconds 2
+                        }
 
-                    docker exec $env:MYSQL_CONTAINER mysql `
-                        --host=127.0.0.1 --protocol=tcp `
-                        --user=root --password=$env:MYSQL_ROOT_PASSWORD `
-                        --execute="GRANT ALL PRIVILEGES ON *.* TO '$env:DB_USER'@'%'; FLUSH PRIVILEGES;"
-                    if ($LASTEXITCODE -ne 0) {
-                        throw 'No se pudieron conceder permisos de creaciÃ³n de bases a app_user.'
-                    }
-                '''
+                        if (-not $ready) {
+                            docker logs $env:MYSQL_CONTAINER
+                            throw 'MySQL no estuvo disponible a tiempo.'
+                        }
+
+                        docker exec $env:MYSQL_CONTAINER mysql `
+                            --host=127.0.0.1 --protocol=tcp `
+                            --user=root --password=$env:MYSQL_ROOT_PASSWORD `
+                            --execute="GRANT ALL PRIVILEGES ON *.* TO '$env:DB_USER'@'%'; FLUSH PRIVILEGES;"
+                        if ($LASTEXITCODE -ne 0) {
+                            throw 'No se pudieron conceder permisos de creación de bases a app_user.'
+                        }
+                    '''
+                }
             }
         }
-
         stage('Lint') {
             steps {
                 powershell '''
