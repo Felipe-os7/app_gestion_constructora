@@ -103,7 +103,7 @@ pipeline {
                             --user=root --password=$env:MYSQL_ROOT_PASSWORD `
                             --execute="GRANT ALL PRIVILEGES ON *.* TO '$env:DB_USER'@'%'; FLUSH PRIVILEGES;"
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'No se pudieron conceder permisos de creaci�n de bases a app_user.'
+                            throw 'No se pudieron conceder permisos de creaci�n de bases a app_user.'
                         }
                     '''
                 }
@@ -127,25 +127,29 @@ pipeline {
 
         stage('Pruebas') {
             steps {
-                powershell '''
-                    $python = (Get-Command py -ErrorAction SilentlyContinue).Source
-                    $pythonArgs = @()
-                    if ($python) {
-                        $pythonArgs = @('-3')
-                    } else {
-                        $python = 'C:\\Program Files\\Python313\\python.exe'
-                    }
+                withCredentials([
+                    string(credentialsId: 'mysql-app-password', variable: 'DB_PASSWORD')
+                ]) {
+                    powershell '''
+                        $python = (Get-Command py -ErrorAction SilentlyContinue).Source
+                        $pythonArgs = @()
+                        if ($python) {
+                            $pythonArgs = @('-3')
+                        } else {
+                            $python = 'C:\\Program Files\\Python313\\python.exe'
+                        }
 
-                    & $python @pythonArgs manage.py migrate --noinput
-                    if ($LASTEXITCODE -ne 0) {
-                        throw 'Las migraciones de Django fallaron.'
-                    }
+                        & $python @pythonArgs manage.py migrate --noinput
+                        if ($LASTEXITCODE -ne 0) {
+                            throw 'Las migraciones de Django fallaron.'
+                        }
 
-                    & $python @pythonArgs -m pytest --junitxml=pytest-results.xml
-                    if ($LASTEXITCODE -ne 0) {
-                        throw 'La suite de pruebas falló.'
-                    }
-                '''
+                        & $python @pythonArgs -m pytest --junitxml=pytest-results.xml
+                        if ($LASTEXITCODE -ne 0) {
+                            throw 'La suite de pruebas falló.'
+                        }
+                    '''
+                }
             }
         }
 
