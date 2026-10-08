@@ -76,9 +76,16 @@ pipeline {
                             --env MYSQL_ROOT_PASSWORD=$env:MYSQL_ROOT_PASSWORD `
                             --env MYSQL_ROOT_HOST=% `
                             --publish 3306:3306 `
+                            --pull always `
                             --detach mysql:8.4
                         if ($LASTEXITCODE -ne 0) {
                             throw 'No se pudo iniciar MySQL 8.4 en Docker.'
+                        }
+
+                        $mysqlVersion = docker exec $env:MYSQL_CONTAINER mysql --version
+                        if ($mysqlVersion -notmatch 'Ver 8\.4\.') {
+                            docker logs $env:MYSQL_CONTAINER
+                            throw "La imagen MySQL usada no es 8.4: $mysqlVersion"
                         }
 
                         $ready = $false
