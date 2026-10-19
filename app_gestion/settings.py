@@ -33,11 +33,14 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 
+RENDER_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
 ALLOWED_HOSTS = [
     'app-gestion-6vnf.onrender.com',
     'localhost',
-    '127.0.0.1'
+    '127.0.0.1',
 ]
+if RENDER_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_HOSTNAME)
 
 
 # Application definition
@@ -154,3 +157,5 @@ LOGIN_URL = '/usuarios/login/'
 CSRF_TRUSTED_ORIGINS = [
     "https://app-gestion-6vnf.onrender.com",
 ]
+if RENDER_HOSTNAME:
+    CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_HOSTNAME}")
