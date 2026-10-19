@@ -14,7 +14,7 @@ pipeline {
         DB_NAME = 'constructora'
         DB_USER = 'app_user'
         DB_HOST = '127.0.0.1'
-        DB_PORT = '3307'
+        DB_PORT = '3308'
         MYSQL_CONTAINER = 'jenkins-mysql-ci'
         APP_PORT = '8000'
         APP_PID_FILE = '.jenkins-django.pid'
@@ -77,7 +77,7 @@ pipeline {
                             --env MYSQL_PASSWORD=$env:DB_PASSWORD `
                             --env MYSQL_ROOT_PASSWORD=$env:MYSQL_ROOT_PASSWORD `
                             --env MYSQL_ROOT_HOST=% `
-                            --publish 3307:3306 `
+                            --publish 3308:3306 `
                             --pull always `
                             --detach mysql:8.4
                         if ($LASTEXITCODE -ne 0) {
