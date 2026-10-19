@@ -178,6 +178,12 @@ pipeline {
     }
 
     post {
+        success {
+            echo 'CI/CD completado correctamente: validaciones y pruebas aprobadas.'
+        }
+        failure {
+            echo 'CI/CD detenido: revisa el primer error mostrado en Console Output.'
+        }
         always {
             junit testResults: 'pytest-results.xml', allowEmptyResults: true
             powershell '''
