@@ -16,6 +16,8 @@ pipeline {
         DB_HOST = '127.0.0.1'
         DB_PORT = '3307'
         MYSQL_CONTAINER = 'jenkins-mysql-ci'
+        APP_PORT = '8000'
+        APP_PID_FILE = '.jenkins-django.pid'
     }
 
     stages {
@@ -160,21 +162,60 @@ pipeline {
             }
         }
 
-        stage('Desplegar producción') {
-            when {
-                branch 'main'
-            }
+        stage('Iniciar aplicación local') {
             steps {
-                withCredentials([string(credentialsId: 'render-deploy-hook', variable: 'RENDER_DEPLOY_HOOK_URL')]) {
+                withCredentials([
+                    string(credentialsId: 'mysql-app-password', variable: 'DB_PASSWORD')
+                ]) {
                     powershell '''
-                        if ([string]::IsNullOrWhiteSpace($env:RENDER_DEPLOY_HOOK_URL)) {
-                            throw 'Falta la credencial Jenkins render-deploy-hook.'
+                        if (Test-Path $env:APP_PID_FILE) {
+                            $previousPid = Get-Content $env:APP_PID_FILE
+                            if ($previousPid -match '^\\d+$' -and (Get-Process -Id ([int]$previousPid) -ErrorAction SilentlyContinue)) {
+                                Stop-Process -Id ([int]$previousPid) -Force
+                            }
+                            Remove-Item $env:APP_PID_FILE -Force
                         }
-                        Invoke-WebRequest -Uri $env:RENDER_DEPLOY_HOOK_URL -Method Post -UseBasicParsing
+
+                        $python = (Get-Command py -ErrorAction SilentlyContinue).Source
+                        $pythonArgs = @()
+                        if ($python) {
+                            $pythonArgs = @('-3')
+                        } else {
+                            $python = 'C:\\Program Files\\Python313\\python.exe'
+                        }
+
+                        $process = Start-Process -FilePath $python `
+                            -ArgumentList ($pythonArgs + @('manage.py', 'runserver', "127.0.0.1:$env:APP_PORT", '--noreload')) `
+                            -WorkingDirectory $env:WORKSPACE `
+                            -RedirectStandardOutput "$env:WORKSPACE\\django-server.log" `
+                            -RedirectStandardError "$env:WORKSPACE\\django-server-error.log" `
+                            -PassThru
+                        Set-Content -Path $env:APP_PID_FILE -Value $process.Id
+
+                        $ready = $false
+                        for ($attempt = 1; $attempt -le 30; $attempt++) {
+                            try {
+                                $response = Invoke-WebRequest -Uri "http://127.0.0.1:$env:APP_PORT/" -UseBasicParsing
+                                if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
+                                    $ready = $true
+                                    break
+                                }
+                            } catch {
+                                Start-Sleep -Seconds 2
+                            }
+                        }
+
+                        if (-not $ready) {
+                            Get-Content "$env:WORKSPACE\\django-server-error.log" -ErrorAction SilentlyContinue
+                            throw 'La aplicación Django no respondió en el puerto local 8000.'
+                        }
+
+                        Write-Host "Aplicación local disponible en http://127.0.0.1:$env:APP_PORT/"
                     '''
                 }
             }
         }
+
     }
 
     post {
@@ -186,9 +227,7 @@ pipeline {
         }
         always {
             junit testResults: 'pytest-results.xml', allowEmptyResults: true
-            powershell '''
-                docker rm -f $env:MYSQL_CONTAINER 2>$null
-            '''
+            echo 'La aplicación local y MySQL quedan disponibles para las pruebas manuales.'
         }
     }
 }
