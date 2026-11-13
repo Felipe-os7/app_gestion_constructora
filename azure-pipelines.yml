@@ -1,0 +1,229 @@
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+
+pr:
+  branches:
+    include:
+      - main
+      - develop
+
+pool:
+  name: 'Default'
+
+variables:
+  DJANGO_SETTINGS_MODULE: 'app_gestion.settings'
+  MYSQL_DATABASE: 'test_appgestion'
+  MYSQL_USER: 'app_user'
+  MYSQL_PASSWORD: 'app_secure_password'
+  MYSQL_ROOT_PASSWORD: 'root_secure_password'
+
+stages:
+# ==========================================
+# STAGE 1: INTEGRACIÓN CONTINUA (CI)
+# ==========================================
+- stage: CI_Build_and_Test
+  displayName: 'Integración Continua: Build, Lint y Pruebas'
+  jobs:
+  - job: TestAndSecurity
+    displayName: 'Pruebas Unitarias y DevSecOps'
+    steps:
+    - powershell: |
+        function Resolve-Python {
+          $py = Get-Command py -ErrorAction SilentlyContinue
+          if ($py) {
+            & $py.Source -3 --version *> $null
+            if ($LASTEXITCODE -eq 0) {
+              return "$($py.Source) -3"
+            }
+          }
+
+          $candidates = @(
+            'C:\Program Files\Python313\python.exe',
+            'C:\Program Files\Python314\python.exe',
+            'C:\Program Files\Python312\python.exe'
+          )
+
+          foreach ($candidate in $candidates) {
+            if (Test-Path $candidate) {
+              return $candidate
+            }
+          }
+
+          throw 'Python no está instalado o no está disponible para el servicio del agente.'
+        }
+
+        $pythonCommand = Resolve-Python
+        if ($pythonCommand -like '* -3') {
+          $pyExe = ($pythonCommand -split ' ')[0]
+          & $pyExe -3 -m pip install --upgrade pip
+          & $pyExe -3 -m pip install -r requirements.txt
+          & $pyExe -3 -m pip install flake8 pytest pytest-django
+        } else {
+          & $pythonCommand -m pip install --upgrade pip
+          & $pythonCommand -m pip install -r requirements.txt
+          & $pythonCommand -m pip install flake8 pytest pytest-django
+        }
+      displayName: 'Instalar librerías Python del proyecto'
+
+    - powershell: |
+        docker rm -f mysql-ci 2>$null
+        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1) {
+          throw 'No se pudo limpiar un contenedor MySQL anterior.'
+        }
+
+        docker run --name mysql-ci `
+          --env MYSQL_DATABASE="$(MYSQL_DATABASE)" `
+          --env MYSQL_USER="$(MYSQL_USER)" `
+          --env MYSQL_PASSWORD="$(MYSQL_PASSWORD)" `
+          --env MYSQL_ROOT_PASSWORD="$(MYSQL_ROOT_PASSWORD)" `
+          --env MYSQL_ROOT_HOST="%" `
+          --publish 3306:3306 `
+          --detach mysql:8.4
+        if ($LASTEXITCODE -ne 0) {
+          throw 'No se pudo iniciar el contenedor MySQL de CI.'
+        }
+
+        $ready = $false
+        for ($attempt = 1; $attempt -le 60; $attempt++) {
+          docker exec mysql-ci mysqladmin ping --host=127.0.0.1 --protocol=tcp --user=root --password="$(MYSQL_ROOT_PASSWORD)" --silent
+          if ($LASTEXITCODE -eq 0) {
+            $ready = $true
+            break
+          }
+          Start-Sleep -Seconds 2
+        }
+
+        if (-not $ready) {
+          Write-Host 'MySQL no estuvo disponible a tiempo.'
+          docker logs mysql-ci
+          exit 1
+        }
+        docker exec mysql-ci mysql --host=127.0.0.1 --protocol=tcp --user=root --password="$(MYSQL_ROOT_PASSWORD)" --execute="GRANT ALL PRIVILEGES ON *.* TO '$(MYSQL_USER)'@'%'; FLUSH PRIVILEGES;"
+        if ($LASTEXITCODE -ne 0) {
+          throw 'No se pudieron conceder permisos al usuario de MySQL para crear la base temporal de pytest.'
+        }
+      displayName: 'Iniciar y esperar MySQL para las pruebas'
+
+    - powershell: |
+        function Resolve-Python {
+          $py = Get-Command py -ErrorAction SilentlyContinue
+          if ($py) {
+            & $py.Source -3 --version *> $null
+            if ($LASTEXITCODE -eq 0) {
+              return "$($py.Source) -3"
+            }
+          }
+
+          $candidates = @(
+            'C:\Program Files\Python313\python.exe',
+            'C:\Program Files\Python314\python.exe',
+            'C:\Program Files\Python312\python.exe'
+          )
+
+          foreach ($candidate in $candidates) {
+            if (Test-Path $candidate) {
+              return $candidate
+            }
+          }
+
+          throw 'Python no está instalado o no está disponible para el servicio del agente.'
+        }
+
+        $pythonCommand = Resolve-Python
+        if ($pythonCommand -like '* -3') {
+          $pyExe = ($pythonCommand -split ' ')[0]
+          & $pyExe -3 -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        } else {
+          & $pythonCommand -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        }
+      displayName: 'Linting de código con Flake8'
+
+    - powershell: |
+        function Resolve-Python {
+          $py = Get-Command py -ErrorAction SilentlyContinue
+          if ($py) {
+            & $py.Source -3 --version *> $null
+            if ($LASTEXITCODE -eq 0) {
+              return "$($py.Source) -3"
+            }
+          }
+
+          $candidates = @(
+            'C:\Program Files\Python313\python.exe',
+            'C:\Program Files\Python314\python.exe',
+            'C:\Program Files\Python312\python.exe'
+          )
+
+          foreach ($candidate in $candidates) {
+            if (Test-Path $candidate) {
+              return $candidate
+            }
+          }
+
+          throw 'Python no está instalado o no está disponible para el servicio del agente.'
+        }
+
+        $pythonCommand = Resolve-Python
+        if ($pythonCommand -like '* -3') {
+          $pyExe = ($pythonCommand -split ' ')[0]
+          & $pyExe -3 manage.py migrate --noinput
+          & $pyExe -3 -m pytest --junitxml="$(Common.TestResultsDirectory)/pytest-results.xml"
+        } else {
+          & $pythonCommand manage.py migrate --noinput
+          & $pythonCommand -m pytest --junitxml="$(Common.TestResultsDirectory)/pytest-results.xml"
+        }
+      env:
+        DJANGO_SETTINGS_MODULE: $(DJANGO_SETTINGS_MODULE)
+        DJANGO_DEBUG: 'False'
+        DJANGO_SECRET_KEY: 'clave-insegura-solo-para-pruebas-ci'
+        DB_NAME: $(MYSQL_DATABASE)
+        DB_USER: $(MYSQL_USER)
+        DB_PASSWORD: $(MYSQL_PASSWORD)
+        DB_HOST: 127.0.0.1
+        DB_PORT: '3306'
+      displayName: 'Ejecutar suite de pruebas (pytest)'
+
+    - task: PublishTestResults@2
+      condition: succeededOrFailed()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '$(Common.TestResultsDirectory)/pytest-results.xml'
+        failTaskOnFailedTests: true
+      displayName: 'Publicar resultados de pytest'
+
+    - powershell: |
+        if (Get-Command docker -ErrorAction SilentlyContinue) {
+          docker rm -f mysql-ci 2>$null
+        } else {
+          Write-Host 'Docker no está instalado; no hay contenedor MySQL que limpiar.'
+        }
+      condition: always()
+      displayName: 'Limpiar contenedor MySQL de CI'
+
+# ==========================================
+# STAGE 2: DESPLIEGUE CONTINUO (CD)
+# ==========================================
+- stage: CD_Deploy_Production
+  displayName: 'Despliegue a Producción'
+  dependsOn: CI_Build_and_Test
+  # Solo se ejecuta si pasó la fase CI y si el commit proviene de la rama 'main'
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployApp
+    displayName: 'Desplegar a Servidor Productivo'
+    environment: 'production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - powershell: |
+              if ([string]::IsNullOrWhiteSpace($env:RENDER_DEPLOY_HOOK_URL) -or $env:RENDER_DEPLOY_HOOK_URL -like '`$(*') {
+                throw 'Falta configurar la variable secreta RENDER_DEPLOY_HOOK_URL.'
+              }
+              Invoke-WebRequest -Uri $env:RENDER_DEPLOY_HOOK_URL -Method Post -UseBasicParsing
+            env:
+              RENDER_DEPLOY_HOOK_URL: $(RENDER_DEPLOY_HOOK_URL)
+            displayName: 'Disparar despliegue en Render'

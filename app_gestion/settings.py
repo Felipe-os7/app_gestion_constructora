@@ -57,6 +57,7 @@ if not SECRET_KEY:
             'import get_random_secret_key; print(get_random_secret_key())"'
         )
 
+RENDER_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
 ALLOWED_HOSTS = [
     'app-gestion-6vnf.onrender.com',
     'localhost',
@@ -64,8 +65,8 @@ ALLOWED_HOSTS = [
 ]
 ALLOWED_HOSTS += _env_list('DJANGO_ALLOWED_HOSTS')
 # Render expone su hostname público en esta variable.
-if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
-    ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
+if RENDER_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_HOSTNAME)
 
 
 # Application definition
@@ -245,7 +246,7 @@ LIVE_SYNC_ENABLED = _env_bool('LIVE_SYNC_ENABLED', True)
 LIVE_SYNC_INTERVAL_SECONDS = int(os.getenv('LIVE_SYNC_INTERVAL_SECONDS', 8))
 # Páginas donde se activa. Si alguna de tus URL de cuadrillas/trabajadores/reasignaciones
 # no empieza por estos prefijos, agrégala aquí.
-LIVE_SYNC_PATH_PREFIXES = ('/cuadrilla', '/reasign', '/trabajador', '/historial')
+LIVE_SYNC_PATH_PREFIXES = ('/cuadrilla', '/reasign', '/trabajador', '/integrante', '/historial')
 LIVE_SYNC_EXACT_PATHS = ('/',)  # el panel principal
 
 
@@ -285,3 +286,5 @@ INCIDENT_NOTIFICATION_EMAILS = [
     for email in os.getenv("INCIDENT_NOTIFICATION_EMAILS", "").split(",")
     if email.strip()
 ]
+if RENDER_HOSTNAME:
+    CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_HOSTNAME}")

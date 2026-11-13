@@ -6,3 +6,7 @@ venv/
 .venv/
 staticfiles/
 media/
+agent
+.jenkins-django.pid
+django-server.log
+django-server-error.log
