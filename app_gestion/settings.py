@@ -11,7 +11,10 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -21,23 +24,48 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+def _env_bool(name, default=False):
+    return os.getenv(name, str(default)).strip().lower() in ('1', 'true', 'yes', 'on')
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-%n^_6vvogjp9mb(_r(kp+aq^_=ni!bq(jjm-6cna)8b7n=)skz'
-)
+
+def _env_list(name, default=()):
+    raw = os.getenv(name, '')
+    return [item.strip() for item in raw.split(',') if item.strip()] or list(default)
+
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
+# CAMBIO: antes el valor por defecto era True, es decir, si faltaba la variable
+# en el servidor la aplicación quedaba en modo debug (páginas de error con
+# código, variables y configuración visibles). Ahora el defecto es False.
+# En desarrollo local define DJANGO_DEBUG=True en tu archivo .env.
+DEBUG = _env_bool('DJANGO_DEBUG', False)
+
+RUNNING_TESTS = len(sys.argv) > 1 and sys.argv[1] == 'test'
+
+# SECURITY WARNING: keep the secret key used in production secret!
+# CAMBIO: ya no existe una clave de respaldo "en producción". La anterior estaba
+# escrita en el repositorio, por lo que debe considerarse comprometida: genera
+# una nueva y guárdala solo como variable de entorno.
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', '')
+if not SECRET_KEY:
+    if DEBUG or RUNNING_TESTS:
+        SECRET_KEY = 'django-insecure-solo-para-desarrollo-local-no-usar-en-produccion'
+    else:
+        raise ImproperlyConfigured(
+            'Falta la variable de entorno DJANGO_SECRET_KEY. '
+            'Genera una con: python -c "from django.core.management.utils '
+            'import get_random_secret_key; print(get_random_secret_key())"'
+        )
 
 ALLOWED_HOSTS = [
     'app-gestion-6vnf.onrender.com',
     'localhost',
-    '127.0.0.1'
+    '127.0.0.1',
 ]
+ALLOWED_HOSTS += _env_list('DJANGO_ALLOWED_HOSTS')
+# Render expone su hostname público en esta variable.
+if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+    ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
 
 
 # Application definition
@@ -60,6 +88,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'core.middleware.SessionSecurityMiddleware',  # Middleware de seguridad de sesión
+    'core.sync.LiveSyncMiddleware',  # Sincronización entre equipos (debe ir después del anterior)
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -138,10 +167,25 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
     BASE_DIR / 'core' / 'static',
     BASE_DIR / 'usuarios' / 'static',
 ]
+
+# Con DEBUG=False Django ya no sirve los archivos estáticos; en Render los sirve
+# WhiteNoise. Si el paquete está instalado se activa solo (pip install whitenoise
+# y ejecutar `python manage.py collectstatic --noinput` en el build de Render).
+try:
+    import whitenoise  # noqa: F401
+except ImportError:
+    pass
+else:
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+    STORAGES = {
+        'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+        'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage'},
+    }
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -153,4 +197,91 @@ LOGOUT_REDIRECT_URL = '/usuarios/login/'
 LOGIN_URL = '/usuarios/login/'
 CSRF_TRUSTED_ORIGINS = [
     "https://app-gestion-6vnf.onrender.com",
+]
+CSRF_TRUSTED_ORIGINS += _env_list('DJANGO_CSRF_TRUSTED_ORIGINS')
+
+
+# ---------------------------------------------------------------------------
+# Seguridad de peticiones, sesiones y cookies
+# ---------------------------------------------------------------------------
+
+# Límites de tamaño de lo que puede enviar un cliente. Los formularios de la
+# aplicación son pequeños (el más grande envía unas decenas de campos), así que
+# se rechazan peticiones con miles de campos o cuerpos enormes (HTTP 400)
+# antes de que lleguen a las vistas.
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 200
+DATA_UPLOAD_MAX_MEMORY_SIZE = 256 * 1024  # 256 KB
+
+# Cookies: nunca accesibles desde JavaScript y no enviadas en peticiones
+# cruzadas de otros sitios.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+# Duración máxima de la sesión (8 horas por defecto). Ajustable por variable de entorno.
+SESSION_COOKIE_AGE = int(os.getenv('DJANGO_SESSION_COOKIE_AGE', 60 * 60 * 8))
+
+# Cabeceras de seguridad.
+X_FRAME_OPTIONS = 'DENY'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+
+if not DEBUG and not RUNNING_TESTS:
+    # (En los tests se omite: el cliente de pruebas usa HTTP y el redirect a HTTPS los rompería.)
+    # Render termina TLS en su proxy y reenvía la petición por HTTP con esta cabecera.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = _env_bool('DJANGO_SSL_REDIRECT', True)
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # HSTS: empieza en 1 hora. Cuando confirmes que todo funciona por HTTPS,
+    # súbelo con DJANGO_HSTS_SECONDS=31536000 (1 año).
+    SECURE_HSTS_SECONDS = int(os.getenv('DJANGO_HSTS_SECONDS', 3600))
+
+
+# ---------------------------------------------------------------------------
+# Sincronización entre equipos abiertos a la vez (ver core/sync.py)
+# ---------------------------------------------------------------------------
+LIVE_SYNC_ENABLED = _env_bool('LIVE_SYNC_ENABLED', True)
+# Cada cuántos segundos cada pantalla abierta consulta si otro equipo cambió algo (mínimo 3).
+LIVE_SYNC_INTERVAL_SECONDS = int(os.getenv('LIVE_SYNC_INTERVAL_SECONDS', 8))
+# Páginas donde se activa. Si alguna de tus URL de cuadrillas/trabajadores/reasignaciones
+# no empieza por estos prefijos, agrégala aquí.
+LIVE_SYNC_PATH_PREFIXES = ('/cuadrilla', '/reasign', '/trabajador', '/historial')
+LIVE_SYNC_EXACT_PATHS = ('/',)  # el panel principal
+
+
+# ---------------------------------------------------------------------------
+# Logging: sin esto, los logger.exception(...) de las vistas y del middleware
+# no aparecen en los logs de Render.
+# ---------------------------------------------------------------------------
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'simple': {'format': '%(asctime)s %(levelname)s %(name)s: %(message)s'},
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'simple'},
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+    },
+}
+
+
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend",
+)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "1025"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "False") == "True"
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@app-gestion.local")
+INCIDENT_EMAIL_SUBJECT_PREFIX = "[Gestión de cuadrillas]"
+INCIDENT_NOTIFICATION_EMAILS = [
+    email.strip()
+    for email in os.getenv("INCIDENT_NOTIFICATION_EMAILS", "").split(",")
+    if email.strip()
 ]

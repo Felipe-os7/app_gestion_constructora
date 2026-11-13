@@ -6,15 +6,10 @@
 {% block content %}
 <h2 class="mb-4">Gestión de Cuadrillas</h2>
 
-<!-- Mensajes de éxito o error -->
-{% if messages %}
-{% for message in messages %}
-<div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-  {{ message }}
+<div id="cuadrilla-warning" class="alert alert-warning alert-dismissible fade show d-none" role="alert">
+  <span id="cuadrilla-warning-text"></span>
   <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
-{% endfor %}
-{% endif %}
 
 <!-- Tabla de cuadrillas registradas - MOSTRADA PRIMERO -->
 <div class="card mb-4">
@@ -39,7 +34,7 @@
           <td>{{ c.nombre }}</td>
           <td>{{ c.proyecto.nombre }}</td>
           <td class="text-center">
-            <span class="px-2 py-1 rounded {% if c.estado == 'activa' %}bg-success text-white{% else %}bg-danger text-white{% endif %}">
+            <span class="px-2 py-1 rounded {% if c.estado == 'asignada' %}bg-success text-white{% elif c.estado == 'en_asignacion' %}bg-warning text-dark{% else %}bg-secondary text-white{% endif %}">
               {{ c.get_estado_display }}
             </span>
           </td>
@@ -81,14 +76,14 @@
 </div>
 
 <!-- Formulario para crear/editar cuadrilla -->
-<form method="post" class="mb-4">
+<form method="post" class="mb-4" id="form-cuadrilla">
   {% csrf_token %}
   <input type="hidden" name="accion" value="guardar">
   <input type="hidden" name="cuadrilla_id" value="{{ cuadrilla.id|default:'' }}">
   <div class="row g-3">
     <div class="col-md-6">
       <label class="form-label">Nombre de la cuadrilla</label>
-      <input type="text" name="nombre" placeholder="Nombre de la cuadrilla" class="form-control" value="{{ cuadrilla.nombre|default_if_none:'' }}" required>
+      <input type="text" name="nombre" placeholder="Nombre de la cuadrilla" class="form-control" data-plain-text value="{{ cuadrilla.nombre|default_if_none:'' }}" required>
     </div>
 
     <div class="col-md-6">
@@ -105,14 +100,42 @@
       <label class="form-label">Estado</label>
       <div class="d-flex align-items-center">
         <select name="estado" class="form-select" required>
-          <option value="activa" {% if cuadrilla and cuadrilla.estado == 'activa' %}selected{% endif %}>Activa</option>
-          <option value="inactiva" {% if cuadrilla and cuadrilla.estado == 'inactiva' %}selected{% endif %}>Inactiva</option>
+          <option value="disponible" {% if not cuadrilla or cuadrilla.estado == 'disponible' %}selected{% endif %}>Disponible</option>
+          <option value="en_asignacion" {% if cuadrilla and cuadrilla.estado == 'en_asignacion' %}selected{% endif %}>En proceso de asignación</option>
+          <option value="asignada" {% if cuadrilla and cuadrilla.estado == 'asignada' %}selected{% endif %}>Asignada</option>
         </select>
         {% if cuadrilla %}
-        <span class="ms-2 px-2 py-1 rounded {% if cuadrilla.estado == 'activa' %}bg-success text-white{% else %}bg-danger text-white{% endif %}">
+        <span class="ms-2 px-2 py-1 rounded {% if cuadrilla.estado == 'asignada' %}bg-success text-white{% elif cuadrilla.estado == 'en_asignacion' %}bg-warning text-dark{% else %}bg-secondary text-white{% endif %}">
           {{ cuadrilla.get_estado_display }}
         </span>
         {% endif %}
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <label class="form-label">Primer día de jornada</label>
+      <input type="date" name="fecha_inicio_jornada" class="form-control"
+             min="{{ hoy|date:'Y-m-d' }}"
+             {% if not cuadrilla %}required{% endif %}
+             value="{{ cuadrilla.fecha_inicio_jornada|date:'Y-m-d' }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Último día de jornada</label>
+      <input type="date" name="fecha_fin_jornada" class="form-control"
+             min="{{ hoy|date:'Y-m-d' }}"
+             {% if not cuadrilla %}required{% endif %}
+             value="{{ cuadrilla.fecha_fin_jornada|date:'Y-m-d' }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Horas diarias (mínimo 1, máximo 8)</label>
+      <input type="number" name="horas_diarias" class="form-control"
+             min="1" max="8" step="0.25"
+             title="Las horas diarias deben estar entre 1 y 8 horas."
+             {% if not cuadrilla %}required{% endif %}
+             value="{{ cuadrilla.horas_diarias|default_if_none:'' }}">
+      <div class="form-text">Debe ingresar entre 1 y 8 horas diarias.</div>
+      <div id="horas-diarias-error" class="invalid-feedback">
+        Las horas diarias deben estar entre 1 y 8 horas.
       </div>
     </div>
 
@@ -121,7 +144,7 @@
         <div class="card-header d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
           <div>
             <h5 class="mb-0">Seleccionar y definir roles del equipo</h5>
-            <small class="text-muted">Seleccione los trabajadores registrados y defina su rol y estado dentro de la cuadrilla.</small>
+            <small class="text-muted">Seleccione entre 3 y 5 trabajadores y defina su rol y estado dentro de la cuadrilla.</small>
           </div>
           <div class="w-100 w-md-50">
             <input type="search" id="filtro-integrantes" class="form-control form-control-sm" placeholder="Buscar trabajador por nombre">
@@ -171,7 +194,9 @@
                 <td style="width: 240px;">
                   <select name="rol_{{ i.id }}" class="form-select form-select-sm control-integrante" data-checkbox="integrante-{{ i.id }}" {% if not cuadrilla or i.cuadrilla and i.cuadrilla.id != cuadrilla.id %}disabled{% endif %}>
                     {% for clave, texto in cargo_choices %}
-                    <option value="{{ clave }}" {% if i.cargo == clave %}selected{% endif %}>{{ texto }}</option>
+                    {% if clave != 'lider' or i.usuario and i.usuario.perfil.rol == 'lider_cuadrilla' %}
+                    <option value="{{ clave }}" {% if clave == 'lider' and i.usuario and i.usuario.perfil.rol == 'lider_cuadrilla' or i.cargo == clave %}selected{% endif %}>{{ texto }}</option>
+                    {% endif %}
                     {% endfor %}
                   </select>
                 </td>
@@ -228,7 +253,7 @@
       <h5 class="mb-0">Historial de cambios recientes</h5>
       <small class="text-muted">Mostrando los 5 más recientes</small>
     </div>
-    <a href="{% url 'historial_cambios' %}" class="btn btn-outline-secondary btn-sm">📜 Ver historial completo</a>
+    <a href="{% url 'historial_cambios' %}" class="btn btn-outline-secondary btn-sm"> Ver historial completo</a>
   </div>
   <ul class="list-group list-group-flush">
     {% for item in historial %}
@@ -273,6 +298,40 @@
           const nombre = fila.dataset.nombre || "";
           fila.style.display = nombre.includes(termino) ? "" : "none";
         });
+      });
+    }
+
+    const horasDiarias = document.querySelector("[name='horas_diarias']");
+    if (horasDiarias) {
+      const validarHoras = function () {
+        const valor = Number(horasDiarias.value);
+        const invalido = horasDiarias.value === "" || valor < 1 || valor > 8;
+        horasDiarias.setCustomValidity(
+          invalido ? "Las horas diarias deben estar entre 1 y 8 horas." : ""
+        );
+        horasDiarias.classList.toggle("is-invalid", invalido);
+        horasDiarias.classList.toggle("is-valid", !invalido);
+      };
+      horasDiarias.addEventListener("input", validarHoras);
+      horasDiarias.addEventListener("change", validarHoras);
+      horasDiarias.addEventListener("blur", validarHoras);
+      validarHoras();
+    }
+
+    const formularioCuadrilla = document.getElementById("form-cuadrilla");
+    if (formularioCuadrilla) {
+      formularioCuadrilla.addEventListener("submit", function (event) {
+        const seleccionados = formularioCuadrilla.querySelectorAll(
+          "input[name='integrantes']:checked:not(:disabled)"
+        ).length;
+        if (seleccionados < 3 || seleccionados > 5) {
+          event.preventDefault();
+          const warning = document.getElementById("cuadrilla-warning");
+          const warningText = document.getElementById("cuadrilla-warning-text");
+          warningText.textContent = "La cuadrilla debe tener un mínimo de 3 y un máximo de 5 trabajadores.";
+          warning.classList.remove("d-none");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
       });
     }
   });

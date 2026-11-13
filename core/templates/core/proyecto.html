@@ -11,27 +11,17 @@
     </div>
 </div>
 
-<!-- Mensajes de éxito o error -->
-{% if messages %}
-    {% for message in messages %}
-        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    {% endfor %}
-{% endif %}
-
 <!-- Formulario para agregar/editar proyecto -->
 <form method="post" class="mb-4">
     {% csrf_token %}
     <div class="row g-3">
         <div class="col-md-6">
             <label class="form-label">Nombre del Proyecto</label>
-            <input type="text" name="nombre" placeholder="Nombre del Proyecto" class="form-control" value="{{ proyecto.nombre|default_if_none:'' }}" required>
+            <input type="text" name="nombre" placeholder="Nombre del Proyecto" class="form-control" data-plain-text value="{{ proyecto.nombre|default_if_none:'' }}" required>
         </div>
         <div class="col-md-6">
             <label class="form-label">Cliente</label>
-            <input type="text" name="cliente" placeholder="Nombre del Cliente" class="form-control" value="{{ proyecto.cliente|default_if_none:'' }}" required>
+            <input type="text" name="cliente" placeholder="Nombre del Cliente" class="form-control" data-plain-text value="{{ proyecto.cliente|default_if_none:'' }}" required>
         </div>
         <div class="col-md-4">
             <label class="form-label">Estado</label>
@@ -48,11 +38,12 @@
         </div>
         <div class="col-md-4">
             <label class="form-label">Fecha de Término</label>
-            <input type="date" name="fecha_termino" class="form-control" value="{{ proyecto.fecha_termino|date:'Y-m-d' }}">
+            <input type="date" name="fecha_termino" class="form-control" value="{{ proyecto.fecha_termino|date:'Y-m-d' }}" data-min-project-weeks="3">
         </div>
         <div class="col-md-4">
             <label class="form-label">Presupuesto</label>
-            <input type="number" name="presupuesto" class="form-control" placeholder="0" value="{{ proyecto.presupuesto|default_if_none:0 }}" min="0" step="0.01">
+            <input type="number" name="presupuesto" class="form-control" placeholder="0" value="{{ proyecto.presupuesto|default_if_none:0 }}" min="0.01" max="1000000000" step="0.01" required>
+            <div class="form-text">Máximo: $1.000.000.000</div>
         </div>
         <div class="col-md-4">
             <label class="form-label">Dirección</label>

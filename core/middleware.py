@@ -5,137 +5,78 @@ la sesión se cierra automáticamente por seguridad.
 """
 
 import hashlib
+import logging
+
 from django.contrib.auth import logout
-from django.contrib.auth.models import User
 from django.shortcuts import redirect
-from django.urls import reverse
+
 from usuarios.models import PerfilUsuario
 from core.models import Integrante
+
+logger = logging.getLogger(__name__)
+
+SESSION_HASH_KEY = "user_security_hash"
 
 
 class SessionSecurityMiddleware:
     """
-    Middleware que verifica la integridad de la sesión del usuario.
-    
-    Si el usuario ha sido modificado, desactivado o eliminado desde que inició sesión,
-    la sesión se cierra automáticamente por seguridad.
-    
-    Utiliza un hash de los datos críticos del usuario almacenado en la sesión
-    para detectar cambios.
+    Verifica en CADA petición (sin excepciones por ruta ni por método) que el
+    usuario siga activo, con perfil activo y sin estar suspendido.
+
+    Antes, los POST a /cuadrilla* se saltaban toda la verificación, de modo que
+    un usuario suspendido o con perfil desactivado podía seguir operando con una
+    sesión ya abierta. Ahora el hash solo incluye datos de seguridad (cuenta,
+    rol y estado del perfil); los campos operativos del integrante (estado y
+    cargo cambian al asignar a una cuadrilla) ya no invalidan la sesión, por lo
+    que el bypass dejó de ser necesario. La suspensión se comprueba siempre,
+    de forma explícita.
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
-    def _get_user_hash(self, user):
-        """
-        Genera un hash de los datos críticos del usuario para detectar cambios.
-        Incluye el estado del perfil y del integrante.
-        """
-        critical_data = f"{user.pk}:{user.username}:{user.is_active}:{user.is_superuser}:{user.is_staff}"
+    @staticmethod
+    def _get_user_hash(user, perfil):
+        data = f"{user.pk}:{user.username}:{user.is_active}:{user.is_superuser}:{user.is_staff}"
+        data += f":{perfil.estado}:{perfil.rol}" if perfil else ":no_perfil"
+        return hashlib.sha256(data.encode()).hexdigest()
 
-        # Estado del perfil
-        try:
-            perfil = PerfilUsuario.objects.get(usuario=user)
-            critical_data += f":{perfil.estado}:{perfil.rol}"
-        except PerfilUsuario.DoesNotExist:
-            critical_data += ":no_perfil"
-
-        # Estado del integrante
-        try:
-            integrante = Integrante.objects.get(usuario=user)
-            critical_data += f":{integrante.estado}:{integrante.cargo}"
-        except Integrante.DoesNotExist:
-            critical_data += ":no_integrante"
-
-        return hashlib.md5(critical_data.encode()).hexdigest()
+    @staticmethod
+    def _invalidate(request):
+        logout(request)  # flush de la sesión incluido
+        return redirect("login")
 
     def __call__(self, request):
-
-        # ❗ IMPORTANTE: Ignorar /admin para que no redirija al login de la app
-        if request.path.startswith('/admin'):
+        # /admin tiene su propia autenticación; no se redirige al login de la app.
+        if request.path.startswith("/admin"):
             return self.get_response(request)
-        
-        # Ignorar actualizaciones de cuadrilla para evitar redirección al login
-        if request.path.startswith('/cuadrilla') and request.method == 'POST':
-            # No verificar hash cuando se actualiza una cuadrilla
-            response = self.get_response(request)
-            # Actualizar el hash después de la respuesta para evitar problemas
-            if request.user.is_authenticated:
-                try:
-                    current_user = User.objects.get(pk=request.user.pk)
-                    request.session['user_security_hash'] = self._get_user_hash(current_user)
-                except:
-                    pass
-            return response
 
-        # Solo verificar si el usuario está autenticado
-        if request.user.is_authenticated:
-            try:
-                current_user = User.objects.get(pk=request.user.pk)
+        if not request.user.is_authenticated:
+            return self.get_response(request)
 
-                if not current_user.is_active:
-                    logout(request)
-                    if hasattr(request, 'session'):
-                        request.session.flush()
-                    return redirect('login')
+        try:
+            # request.user ya se cargó desde la BD en esta petición y
+            # ModelBackend ya descarta cuentas inactivas.
+            user = request.user
+            if not user.is_active:
+                return self._invalidate(request)
 
-                # Verificar perfil
-                try:
-                    perfil = PerfilUsuario.objects.get(usuario=current_user)
-                    if perfil.estado != 'activo':
-                        logout(request)
-                        if hasattr(request, 'session'):
-                            request.session.flush()
-                        return redirect('login')
-                except PerfilUsuario.DoesNotExist:
-                    logout(request)
-                    if hasattr(request, 'session'):
-                        request.session.flush()
-                    return redirect('login')
+            perfil = PerfilUsuario.objects.filter(usuario=user).first()
+            if perfil is None or perfil.estado != "activo":
+                return self._invalidate(request)
 
-                # Verificar integrante
-                try:
-                    integrante = Integrante.objects.get(usuario=current_user)
-                    if integrante.estado == 'suspendido':
-                        logout(request)
-                        if hasattr(request, 'session'):
-                            request.session.flush()
-                        return redirect('login')
-                except Integrante.DoesNotExist:
-                    pass
+            if Integrante.objects.filter(usuario=user, estado="suspendido").exists():
+                return self._invalidate(request)
 
-                # Verificar hash
-                current_hash = self._get_user_hash(current_user)
-                stored_hash = request.session.get('user_security_hash')
-
-                if stored_hash is None:
-                    request.session['user_security_hash'] = current_hash
-                elif stored_hash != current_hash:
-                    logout(request)
-                    if hasattr(request, 'session'):
-                        request.session.flush()
-                    return redirect('login')
-
-                # Verificación adicional de username
-                if request.user.username != current_user.username:
-                    logout(request)
-                    if hasattr(request, 'session'):
-                        request.session.flush()
-                    return redirect('login')
-
-                request.user = current_user
-
-            except User.DoesNotExist:
-                logout(request)
-                if hasattr(request, 'session'):
-                    request.session.flush()
-                return redirect('login')
-
-            except Exception:
-                logout(request)
-                if hasattr(request, 'session'):
-                    request.session.flush()
-                return redirect('login')
+            current_hash = self._get_user_hash(user, perfil)
+            stored_hash = request.session.get(SESSION_HASH_KEY)
+            if stored_hash is None:
+                request.session[SESSION_HASH_KEY] = current_hash
+            elif stored_hash != current_hash:
+                return self._invalidate(request)
+        except Exception:
+            # Falla cerrada (más seguro), pero dejando rastro para diagnosticar.
+            logger.exception("Error verificando la integridad de la sesión")
+            return self._invalidate(request)
 
         return self.get_response(request)

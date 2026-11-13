@@ -10,11 +10,15 @@
   {% csrf_token %}
   <div class="col-md-4">
     <label class="form-label">Nombre</label>
-    <input type="text" name="nombre_trabajador" class="form-control" required>
+    <input type="text" name="nombre_trabajador" class="form-control" data-person-name
+           pattern="[A-Za-zÁÉÍÓÚáéíóúÑñÜü]+([ ][A-Za-zÁÉÍÓÚáéíóúÑñÜü]+)*"
+           title="Solo se permiten letras y espacios." required>
   </div>
   <div class="col-md-4">
     <label class="form-label">Apellido</label>
-    <input type="text" name="apellido_trabajador" class="form-control" required>
+    <input type="text" name="apellido_trabajador" class="form-control" data-person-name
+           pattern="[A-Za-zÁÉÍÓÚáéíóúÑñÜü]+([ ][A-Za-zÁÉÍÓÚáéíóúÑñÜü]+)*"
+           title="Solo se permiten letras y espacios." required>
   </div>
   <div class="col-md-4">
     <label class="form-label">Cargo</label>

@@ -29,11 +29,11 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="nombre" class="form-label">Nombre del Proyecto *</label>
-                            <input type="text" class="form-control" id="nombre" name="nombre" value="{{ proyecto.nombre }}" required>
+                            <input type="text" class="form-control" id="nombre" name="nombre" data-plain-text value="{{ proyecto.nombre }}" required>
                         </div>
                         <div class="col-md-6">
                             <label for="cliente" class="form-label">Cliente</label>
-                            <input type="text" class="form-control" id="cliente" name="cliente" value="{{ proyecto.cliente }}">
+                            <input type="text" class="form-control" id="cliente" name="cliente" data-plain-text value="{{ proyecto.cliente }}">
                         </div>
                     </div>
 
@@ -50,7 +50,8 @@
                         </div>
                         <div class="col-md-6">
                             <label for="presupuesto" class="form-label">Presupuesto ($)</label>
-                            <input type="number" class="form-control" id="presupuesto" name="presupuesto" value="{{ proyecto.presupuesto }}" step="0.01" min="0.01">
+                            <input type="number" class="form-control" id="presupuesto" name="presupuesto" value="{{ proyecto.presupuesto }}" step="0.01" min="0.01" max="1000000000" required>
+                            <div class="form-text">Máximo: $1.000.000.000</div>
                         </div>
                     </div>
 
@@ -61,7 +62,7 @@
                         </div>
                         <div class="col-md-6">
                             <label for="fecha_termino" class="form-label">Fecha de Término</label>
-                            <input type="date" class="form-control" id="fecha_termino" name="fecha_termino" value="{{ proyecto.fecha_termino|date:'Y-m-d' }}">
+                            <input type="date" class="form-control" id="fecha_termino" name="fecha_termino" value="{{ proyecto.fecha_termino|date:'Y-m-d' }}" data-min-project-weeks="3">
                         </div>
                     </div>
 
@@ -124,4 +125,8 @@
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
 </style>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/validation.js' %}"></script>
 {% endblock %}

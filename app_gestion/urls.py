@@ -25,6 +25,7 @@ urlpatterns = [
     path('cuadrilla/historial/', views.historial_cambios_view, name='historial_cambios'),
     path('integrante/agregar/', views.agregar_trabajador, name='agregar_trabajador'),
     path('integrante/eliminar/<int:integrante_id>/', views.eliminar_integrante, name='eliminar_integrante'),
+    path('incidencias/registrar/', views.registrar_incidencia, name='registrar_incidencia'),
 
     # Reasignación
     path('reasignacion/', views.reasignacion_view, name='reasignacion'),

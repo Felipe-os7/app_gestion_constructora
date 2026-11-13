@@ -3,6 +3,47 @@
  */
 
 document.addEventListener('DOMContentLoaded', function() {
+    const maxInputLength = 20;
+    const limpiarTexto = function(input, patron) {
+        const valorLimpio = Array.from(input.value).filter(function(caracter) {
+            return patron.test(caracter);
+        }).join('');
+        if (input.value !== valorLimpio) {
+            input.value = valorLimpio;
+        }
+    };
+
+    document.querySelectorAll('[data-plain-text]').forEach(function(input) {
+        input.addEventListener('input', function() {
+            limpiarTexto(input, /[\p{L}\p{N}\s]/u);
+        });
+    });
+
+    document.querySelectorAll('[data-person-name]').forEach(function(input) {
+        input.addEventListener('input', function() {
+            limpiarTexto(input, /[\p{L}\s]/u);
+        });
+    });
+
+    document.querySelectorAll('[data-rut]').forEach(function(input) {
+        input.addEventListener('input', function() {
+            input.value = input.value.replace(/[^0-9Kk-]/g, '');
+        });
+    });
+
+    document.querySelectorAll('form input[name], form textarea[name]').forEach(function(input) {
+        if (input.type !== 'hidden') {
+            input.addEventListener('input', function() {
+                if (Array.from(input.value).length > maxInputLength) {
+                    showAlert(
+                        'Este campo no puede superar 20 caracteres.',
+                        'warning'
+                    );
+                }
+            });
+        }
+    });
+
     // Configuración de validadores por tipo de campo
     const validators = {
         presupuesto: {
@@ -30,6 +71,32 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             pattern: /^-?\d+(\.\d{1,2})?$/
         },
+        horas_diarias: {
+            validate: function(value) {
+                if (value === '') {
+                    return {
+                        valid: false,
+                        message: 'Las horas diarias deben estar entre 1 y 8 horas.'
+                    };
+                }
+                const numValue = Number(value);
+                if (!Number.isFinite(numValue) || numValue < 1 || numValue > 8) {
+                    return {
+                        valid: false,
+                        message: 'Las horas diarias deben estar entre 1 y 8 horas.'
+                    };
+                }
+                return { valid: true };
+            }
+        },
+        username: {
+            validate: function(value) {
+                if (!/^[0-9]{7,8}-[0-9Kk]$/.test(value.trim())) {
+                    return { valid: false, message: 'Ingresa un RUT válido con formato 12345678-9.' };
+                }
+                return { valid: true };
+            }
+        },
         nombre: {
             validate: function(value) {
                 if (value.trim() === '') {
@@ -43,6 +110,22 @@ document.addEventListener('DOMContentLoaded', function() {
                         valid: false, 
                         message: 'El nombre debe tener al menos 3 caracteres' 
                     };
+                }
+                return { valid: true };
+            }
+        },
+        nombre_trabajador: {
+            validate: function(value) {
+                if (!/^[\p{L}]+(?:\s+[\p{L}]+)*$/u.test(value.trim())) {
+                    return { valid: false, message: 'Solo se permiten letras y espacios.' };
+                }
+                return { valid: true };
+            }
+        },
+        apellido_trabajador: {
+            validate: function(value) {
+                if (!/^[\p{L}]+(?:\s+[\p{L}]+)*$/u.test(value.trim())) {
+                    return { valid: false, message: 'Solo se permiten letras y espacios.' };
                 }
                 return { valid: true };
             }
@@ -128,6 +211,39 @@ document.addEventListener('DOMContentLoaded', function() {
                             message: 'La fecha de término no puede ser anterior a la fecha de inicio' 
                         };
                     }
+                    const inicio = new Date(inicioInput.value + 'T00:00:00');
+                    const termino = new Date(value + 'T00:00:00');
+                    const diasProyecto = Math.round(
+                        (termino - inicio) / (1000 * 60 * 60 * 24)
+                    );
+                    if (diasProyecto < 21) {
+                        return {
+                            valid: false,
+                            message: 'El proyecto debe durar como mínimo 3 semanas.'
+                        };
+                    }
+                }
+                return { valid: true };
+            }
+        },
+        fecha_inicio_jornada: {
+            validate: function(value) {
+                if (!value) return { valid: true };
+                const today = new Date();
+                const todayString = today.getFullYear() + '-' +
+                    String(today.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(today.getDate()).padStart(2, '0');
+                return value < todayString
+                    ? { valid: false, message: 'La fecha de jornada no puede ser anterior a hoy.' }
+                    : { valid: true };
+            }
+        },
+        fecha_fin_jornada: {
+            validate: function(value) {
+                if (!value) return { valid: true };
+                const inicioInput = document.querySelector('input[name="fecha_inicio_jornada"]');
+                if (inicioInput && inicioInput.value && value < inicioInput.value) {
+                    return { valid: false, message: 'El último día no puede ser anterior al primer día.' };
                 }
                 return { valid: true };
             }
@@ -154,7 +270,13 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         input.addEventListener('input', function() {
-            validateField(input, fieldName, validators);
+            const result = validateField(input, fieldName, validators);
+            if (
+                !result.valid &&
+                Array.from(input.value).length > 20
+            ) {
+                showAlert(result.message, 'warning');
+            }
         });
 
         input.addEventListener('change', function() {
@@ -162,11 +284,60 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    const fechaInicioProyecto = document.querySelector('input[name="fecha_inicio"]');
+    const fechaTerminoProyecto = document.querySelector('input[name="fecha_termino"]');
+    if (fechaInicioProyecto && fechaTerminoProyecto) {
+        const actualizarMinimoTermino = function() {
+            if (!fechaInicioProyecto.value) {
+                fechaTerminoProyecto.removeAttribute('min');
+                fechaTerminoProyecto.setCustomValidity('');
+                return;
+            }
+            const inicio = new Date(fechaInicioProyecto.value + 'T00:00:00');
+            inicio.setDate(inicio.getDate() + 21);
+            const minimo = inicio.getFullYear() + '-' +
+                String(inicio.getMonth() + 1).padStart(2, '0') + '-' +
+                String(inicio.getDate()).padStart(2, '0');
+            fechaTerminoProyecto.min = minimo;
+            if (
+                fechaTerminoProyecto.value &&
+                fechaTerminoProyecto.value < minimo
+            ) {
+                fechaTerminoProyecto.setCustomValidity(
+                    'El proyecto debe durar como mínimo 3 semanas.'
+                );
+            } else {
+                fechaTerminoProyecto.setCustomValidity('');
+            }
+        };
+        const validarTerminoProyecto = function() {
+            actualizarMinimoTermino();
+            const result = validateField(
+                fechaTerminoProyecto,
+                'fecha_termino',
+                validators
+            );
+            if (!result.valid && fechaTerminoProyecto.value) {
+                showAlert(result.message, 'warning');
+            }
+            fechaTerminoProyecto.setCustomValidity(
+                result.valid ? '' : result.message
+            );
+        };
+        fechaInicioProyecto.addEventListener('input', validarTerminoProyecto);
+        fechaInicioProyecto.addEventListener('change', validarTerminoProyecto);
+        fechaTerminoProyecto.addEventListener('input', validarTerminoProyecto);
+        fechaTerminoProyecto.addEventListener('change', validarTerminoProyecto);
+        fechaTerminoProyecto.addEventListener('blur', validarTerminoProyecto);
+        actualizarMinimoTermino();
+    }
+
     // Validar formulario antes de enviar
     const forms = document.querySelectorAll('form');
     forms.forEach(form => {
         form.addEventListener('submit', function(e) {
             let isValid = true;
+            let lengthError = false;
             
             const inputs = form.querySelectorAll('input[name], select[name], textarea[name]');
             inputs.forEach(input => {
@@ -174,12 +345,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 const result = validateField(input, fieldName, validators);
                 if (!result.valid) {
                     isValid = false;
+                    if (Array.from(input.value).length > 20) {
+                        lengthError = true;
+                    }
                 }
             });
 
             if (!isValid) {
                 e.preventDefault();
-                showAlert('Por favor, corrija los errores en el formulario', 'danger');
+                showAlert(
+                    lengthError
+                        ? 'Este campo no puede superar 20 caracteres.'
+                        : 'Por favor, corrija los errores en el formulario',
+                    lengthError ? 'warning' : 'danger'
+                );
             }
         });
     });
@@ -196,8 +375,15 @@ function validateField(input, fieldName, validators) {
     const errorDiv = input.parentElement.querySelector('.field-error');
     let result = { valid: true };
 
+    if (input.type !== 'hidden' && Array.from(input.value).length > 20) {
+        result = {
+            valid: false,
+            message: 'Este campo no puede superar 20 caracteres.'
+        };
+    }
+
     // Buscar validador para este campo
-    if (validators[fieldName]) {
+    if (result.valid && validators[fieldName]) {
         result = validators[fieldName].validate(input.value);
     }
 
@@ -226,15 +412,21 @@ function validateField(input, fieldName, validators) {
  * @param {string} type - Tipo de alerta (success, danger, warning, info)
  */
 function showAlert(message, type = 'info') {
+    const existingAlert = document.querySelector('[data-validation-alert]');
+    if (existingAlert) {
+        existingAlert.remove();
+    }
     const alertDiv = document.createElement('div');
     alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.dataset.validationAlert = 'true';
+    alertDiv.setAttribute('role', 'alert');
     alertDiv.innerHTML = `
         ${message}
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
     
-    const firstSection = document.querySelector('main');
-    if (firstSection) {
-        firstSection.insertBefore(alertDiv, firstSection.firstChild);
+    const topContainer = document.querySelector('main, .login-wrapper');
+    if (topContainer) {
+        topContainer.insertBefore(alertDiv, topContainer.firstChild);
     }
 }

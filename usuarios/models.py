@@ -10,7 +10,7 @@ class PerfilUsuario(models.Model):
     """
     ROL_CHOICES = [
         ('lider_cuadrilla', 'Líder de Cuadrilla'),
-        ('supervisor', 'Supervisor'),
+        ('jefe_obra', 'Jefe de Obra'),
     ]
     ESTADO_CHOICES = [
         ('activo', 'Activo'),

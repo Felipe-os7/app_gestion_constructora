@@ -1,0 +1,50 @@
+{% extends "core/base.html" %}
+
+{% block title %}Registrar incidencia{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h1 class="h5 mb-0">Registrar incidencia en terreno</h1>
+  </div>
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <div class="mb-3">
+        <label class="form-label">Cuadrilla</label>
+        <select name="cuadrilla" id="cuadrilla" class="form-select" required>
+          <option value="">Seleccione una cuadrilla</option>
+          {% for cuadrilla in cuadrillas %}
+          <option value="{{ cuadrilla.id }}">{{ cuadrilla.nombre }} · {{ cuadrilla.proyecto.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Trabajador ausente (opcional)</label>
+        <select name="trabajador" class="form-select">
+          <option value="">No especificado</option>
+          {% for cuadrilla in cuadrillas %}
+            {% for trabajador in cuadrilla.integrantes.all %}
+            <option value="{{ trabajador.id }}">{{ trabajador.get_nombre_completo }} · {{ cuadrilla.nombre }}</option>
+            {% endfor %}
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Tipo</label>
+        <select name="tipo" class="form-select" required>
+          <option value="ausencia">Ausencia de trabajador</option>
+          <option value="accidente">Accidente</option>
+          <option value="atraso">Atraso</option>
+          <option value="otro">Otra incidencia</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Antecedentes</label>
+        <textarea name="descripcion" class="form-control" rows="5" required></textarea>
+      </div>
+      <button class="btn btn-primary" type="submit">Registrar y notificar</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

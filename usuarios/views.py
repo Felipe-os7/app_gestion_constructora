@@ -1,7 +1,9 @@
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.contrib.auth import login
+from django.core.exceptions import ValidationError
 from .forms import RegistroUsuarioForm
+from core.validators import validate_form_input_lengths
 
 
 def registro_view(request):
@@ -13,6 +15,11 @@ def registro_view(request):
         return redirect('index')
     
     if request.method == 'POST':
+        try:
+            validate_form_input_lengths(request.POST)
+        except ValidationError as error:
+            messages.error(request, error.messages[0])
+            return redirect('registro')
         form = RegistroUsuarioForm(request.POST)
         if form.is_valid():
             user = form.save()

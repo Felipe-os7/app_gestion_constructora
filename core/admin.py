@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Proyecto, Cuadrilla, Integrante, SolicitudReasignacion, CambioCuadrilla
+from .models import Proyecto, Cuadrilla, Integrante, SolicitudReasignacion, CambioCuadrilla, Incidencia
 
 
 @admin.register(Proyecto)
@@ -41,3 +41,11 @@ class SolicitudReasignacionAdmin(admin.ModelAdmin):
     list_filter = ("estado", "fecha_solicitud")
     search_fields = ("trabajador__nombre_trabajador", "trabajador__apellido_trabajador", "cuadrilla_origen__nombre", "cuadrilla_destino__nombre")
     readonly_fields = ("fecha_solicitud", "fecha_respuesta", "respondido_por")
+
+
+@admin.register(Incidencia)
+class IncidenciaAdmin(admin.ModelAdmin):
+    list_display = ("fecha", "tipo", "cuadrilla", "trabajador", "registrado_por", "notificado")
+    list_filter = ("tipo", "notificado", "fecha")
+    search_fields = ("cuadrilla__nombre", "trabajador__nombre_trabajador", "descripcion")
+    readonly_fields = ("fecha", "registrado_por", "notificado", "fecha_notificacion")

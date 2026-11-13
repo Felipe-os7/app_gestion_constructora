@@ -41,7 +41,11 @@
                 {% endfor %}
                 {% endif %}
 
-                {% if form.errors %}
+                {% if form.rate_limit_exceeded %}
+                <div class="alert alert-warning" role="alert">
+                    {{ form.non_field_errors.0 }}
+                </div>
+                {% elif form.errors %}
                 <div class="alert alert-danger" role="alert">
                     Usuario o contraseña incorrectos.
                 </div>
@@ -112,6 +116,7 @@
                 })
         });
     </script>
+    <script src="{% static 'js/validation.js' %}"></script>
 </body>
 
 </html>

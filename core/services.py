@@ -44,8 +44,9 @@ class DashboardStatsService(metaclass=SingletonMeta):
         )
         resumen_cuadrillas = cuadrillas.aggregate(
             total=Count("id"),
-            activas=Count("id", filter=Q(estado="activa")),
-            inactivas=Count("id", filter=Q(estado="inactiva")),
+            disponibles=Count("id", filter=Q(estado="disponible")),
+            en_asignacion=Count("id", filter=Q(estado="en_asignacion")),
+            asignadas=Count("id", filter=Q(estado="asignada")),
         )
         resumen_integrantes = integrantes.aggregate(
             total=Count("id"),
@@ -67,4 +68,3 @@ class DashboardStatsService(metaclass=SingletonMeta):
             "integrantes": integrantes,
             "resumen": resumen,
         }
-
