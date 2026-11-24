@@ -5,3 +5,5 @@ gunicorn
 mysqlclient
 djangorestframework
 python-dotenv
+django-anymail
+whitenoise

@@ -19,7 +19,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Cuadrilla, Incidencia, Integrante, Proyecto, SolicitudReasignacion
+from core.models import Cuadrilla, Incidencia, Integrante, Proyecto, SolicitudReasignacion
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
@@ -225,7 +225,7 @@ class PeticionesManipuladasTests(TestCase):
 
     # ---------- texto ----------
     def test_nombre_con_salto_de_linea_es_rechazado(self):
-        from .validators import validate_plain_text, validate_person_name
+        from core.validators import validate_plain_text, validate_person_name
         from django.core.exceptions import ValidationError
         for texto in ("Obra\n1", "Obra\t1", "Obra\r\nUno"):
             with self.subTest(texto=texto):
@@ -235,7 +235,7 @@ class PeticionesManipuladasTests(TestCase):
                     validate_person_name(texto.replace("1", "A").replace("Uno", "A"))
 
     def test_caracteres_de_control_unicode_son_rechazados(self):
-        from .validators import validate_safe_text
+        from core.validators import validate_safe_text
         from django.core.exceptions import ValidationError
         for texto in ("abc\u202edef", "abc\u200bdef", "abc\x7fdef", "abc\x85def", "abc\x00def"):
             with self.subTest(texto=repr(texto)):
@@ -339,7 +339,7 @@ class PeticionesManipuladasTests(TestCase):
         self.lider_int.save()
         self.client.force_login(self.lider)
         r = self.client.post("/cuadrilla/", {"nombre": "x"})
-        self.assertRedirects(r, "/login/", fetch_redirect_response=False)
+        self.assertRedirects(r, "/usuarios/login/", fetch_redirect_response=False)
 
     def test_get_en_endpoints_de_eliminacion_no_borra(self):
         self._como_jefe()
@@ -351,7 +351,7 @@ class PeticionesManipuladasTests(TestCase):
     # ---------- robustez ----------
     def test_falla_del_correo_no_produce_500_ni_pierde_la_incidencia(self):
         self.client.force_login(self.lider)
-        with mock.patch("core.views.send_mail", side_effect=OSError("SMTP caído")):
+        with mock.patch("django.core.mail.message.EmailMessage.send", side_effect=OSError("SMTP caído")):
             r = self.client.post(reverse("registrar_incidencia"), {
                 "cuadrilla": self.cuadrilla.id, "tipo": "otro", "descripcion": "Prueba",
             })

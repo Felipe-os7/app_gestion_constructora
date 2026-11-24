@@ -7,8 +7,8 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from .models import Cuadrilla, Incidencia, Integrante, Proyecto
-from .validators import (
+from core.models import Cuadrilla, Incidencia, Integrante, Proyecto
+from core.validators import (
     validate_form_input_lengths,
     validate_person_name,
     validate_plain_text,

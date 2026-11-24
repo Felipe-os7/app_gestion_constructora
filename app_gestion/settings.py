@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'anymail',
     'core',
     'usuarios',
 ]
@@ -167,7 +168,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
     BASE_DIR / 'core' / 'static',
@@ -270,16 +271,35 @@ LOGGING = {
 }
 
 
-EMAIL_BACKEND = os.getenv(
-    "EMAIL_BACKEND",
-    "django.core.mail.backends.console.EmailBackend",
-)
+# Correo: si existe MAILTRAP_API_TOKEN se envía por Mailtrap (API, vía django-anymail).
+# El token NUNCA va escrito en el código: defínelo en .env / variables de Render.
+MAILTRAP_API_TOKEN = os.getenv("MAILTRAP_API_TOKEN", "")
+if MAILTRAP_API_TOKEN:
+    ANYMAIL = {
+        "MAILTRAP_API_TOKEN": MAILTRAP_API_TOKEN,
+        # Sin timeout, una API caída dejaría colgado al worker que atiende la petición.
+        "REQUESTS_TIMEOUT": (5, 15),
+    }
+    _MAILTRAP_SANDBOX_ID = os.getenv("MAILTRAP_SANDBOX_ID", "").strip()
+    if _MAILTRAP_SANDBOX_ID:
+        ANYMAIL["MAILTRAP_SANDBOX_ID"] = _MAILTRAP_SANDBOX_ID
+    EMAIL_BACKEND = "anymail.backends.mailtrap.EmailBackend"
+else:
+    EMAIL_BACKEND = os.getenv(
+        "EMAIL_BACKEND",
+        (
+            "django.core.mail.backends.smtp.EmailBackend"
+            if os.getenv("EMAIL_HOST_USER") and os.getenv("EMAIL_HOST_PASSWORD")
+            else "django.core.mail.backends.console.EmailBackend"
+        ),
+    )
 EMAIL_HOST = os.getenv("EMAIL_HOST", "localhost")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "1025"))
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "False") == "True"
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@app-gestion.local")
+# Con el dominio de demostración de Mailtrap el remitente debe ser hello@demomailtrap.co
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "hello@demomailtrap.co" if MAILTRAP_API_TOKEN else "no-reply@app-gestion.local")
 INCIDENT_EMAIL_SUBJECT_PREFIX = "[Gestión de cuadrillas]"
 INCIDENT_NOTIFICATION_EMAILS = [
     email.strip()
@@ -288,3 +308,17 @@ INCIDENT_NOTIFICATION_EMAILS = [
 ]
 if RENDER_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_HOSTNAME}")
+
+
+# ---------------------------------------------------------------------------
+# Incidencias: límites anti-abuso (el correo sale por una API con cuota)
+# ---------------------------------------------------------------------------
+INCIDENT_DESCRIPTION_MIN_LENGTH = int(os.getenv('INCIDENT_DESCRIPTION_MIN_LENGTH', 5))
+INCIDENT_DESCRIPTION_MAX_LENGTH = int(os.getenv('INCIDENT_DESCRIPTION_MAX_LENGTH', 500))
+INCIDENT_DESCRIPTION_MAX_LINES = int(os.getenv('INCIDENT_DESCRIPTION_MAX_LINES', 10))
+# Incidencias por minuto: por usuario y en total (protege la cuota de Mailtrap).
+INCIDENT_MAX_PER_MINUTE = int(os.getenv('INCIDENT_MAX_PER_MINUTE', 3))
+INCIDENT_MAX_PER_MINUTE_GLOBAL = int(os.getenv('INCIDENT_MAX_PER_MINUTE_GLOBAL', 15))
+# Tope de destinatarios por aviso.
+INCIDENT_MAX_RECIPIENTS = int(os.getenv('INCIDENT_MAX_RECIPIENTS', 10))
+INCIDENT_ONLY_CONFIGURED_EMAILS = _env_bool('INCIDENT_ONLY_CONFIGURED_EMAILS', False)

@@ -1,5 +1,6 @@
 import re
 import unicodedata
+import urllib.parse
 from collections.abc import Mapping
 from django.core.exceptions import ValidationError
 
@@ -48,7 +49,10 @@ def validate_form_input_lengths(data, limits=None):
             values = [values]
         if field_name == "csrfmiddlewaretoken":
             continue
-        limit = limits.get(field_name, MAX_FORM_INPUT_LENGTH)
+        limit = limits.get(
+            field_name,
+            40 if field_name == "email" else MAX_FORM_INPUT_LENGTH,
+        )
         if any(len(value) > limit for value in values):
             raise ValidationError(
                 f"El campo {field_name} no puede superar "
@@ -69,4 +73,62 @@ def validate_plain_text(value):
         raise ValidationError(
             "Solo se permiten letras, números y espacios; no se permiten caracteres especiales."
         )
+    return value
+
+
+# ---------------------------------------------------------------------------
+# Detección de contenido malicioso en textos que terminan en un correo
+# ---------------------------------------------------------------------------
+# Un texto libre que se reenvía por correo puede usarse para: inyectar HTML/JS
+# (XSS en el cliente de correo), inyectar cabeceras (Bcc:, Subject:...), colar
+# enlaces de phishing, plantillas (SSTI / log4shell) o SQL/rutas. Se rechaza todo
+# eso. El mensaje de error es genérico a propósito: no revela qué regla saltó.
+_MALICIOUS_MESSAGE = (
+    "El texto contiene contenido no permitido (código, etiquetas, enlaces o "
+    "secuencias especiales). Describe la incidencia solo con texto simple."
+)
+_MALICIOUS_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE | re.MULTILINE)
+    for pattern in (
+        r"[<>]",                                             # HTML / PHP / XML
+        r"&#?[a-z0-9]{2,10};",                               # entidades: &lt; &#60; &#x3c;
+        r"\\(?:x[0-9a-f]{2}|u[0-9a-f]{4}|[0-7]{3})",        # escapes \x3c \u003c \074
+        r"\b(?:https?|ftp|file|ws|wss)\s*:\s*/",             # URLs con esquema
+        r"\bwww\s*\.",                                       # URLs sin esquema
+        r"\bdata\s*:\s*[a-z]+/",                             # data:text/html;...
+        r"\bon[a-z]{3,20}\s*=",                              # onerror= onload= ...
+        r"\{\{|\}\}|\{%|%\}|\$\{|\$\(|#\{",                # plantillas / sustitución de shell
+        r"^\s*(?:bcc|cc|to|from|subject|reply-to|content-type|content-transfer-encoding|mime-version)\s*:",  # cabeceras
+        r"\bunion\b.{0,40}\bselect\b",                      # SQL
+        r"\b(?:drop|truncate|alter)\s+(?:table|database)\b",
+        r"\bor\b\s+\d+\s*=\s*\d+",
+        r"\.\./|\.\.\\|/etc/passwd|cmd\.exe|/bin/(?:ba)?sh\b",  # rutas / shell
+        r"\b(?:eval|exec|system|popen|subprocess|__import__)\s*\(",  # ejecución de código
+    )
+)
+_COMPACT_FORBIDDEN = ("javascript:", "vbscript:", "livescript:")
+
+
+def _decoded_variants(value):
+    """Texto original + normalizado (NFKC: ＜script＞ -> <script>) + decodificado (%3C -> <)."""
+    normalized = unicodedata.normalize("NFKC", value)
+    variants = [normalized]
+    decoded = normalized
+    for _ in range(2):  # doble codificación: %253C
+        decoded = urllib.parse.unquote(decoded)
+        variants.append(decoded)
+    return variants
+
+
+def validate_no_malicious_content(value):
+    """Rechaza HTML/JS, URLs, inyección de cabeceras, plantillas, SQL y rutas sospechosas."""
+    if value is None:
+        return value
+    for text in _decoded_variants(value):
+        # Se quitan espacios y controles para detectar "java\nscript:".
+        compact = re.sub(r"[\s\x00-\x1f\u200b-\u200f\u2060\ufeff]+", "", text.lower())
+        if any(token in compact for token in _COMPACT_FORBIDDEN):
+            raise ValidationError(_MALICIOUS_MESSAGE)
+        if any(pattern.search(text) for pattern in _MALICIOUS_PATTERNS):
+            raise ValidationError(_MALICIOUS_MESSAGE)
     return value

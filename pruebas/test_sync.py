@@ -14,8 +14,8 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Cuadrilla, Integrante, Proyecto
-from .sync import SYNC_ENDPOINT, SYNC_FIELD, compute_revision
+from core.models import Cuadrilla, Integrante, Proyecto
+from core.sync import SYNC_ENDPOINT, SYNC_FIELD, compute_revision
 
 _REV_HTML = re.compile(r'data-rev="([0-9a-f]{16})"')
 

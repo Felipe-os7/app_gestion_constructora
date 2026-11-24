@@ -1,7 +1,8 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
 from django.core.cache import cache
-from .forms import CustomAuthenticationForm, RegistroUsuarioForm
+from usuarios.forms import CustomAuthenticationForm, RegistroUsuarioForm
+from core.validators import validate_form_input_lengths
 
 
 class RegistroUsuarioTests(TestCase):
@@ -56,6 +57,41 @@ class RegistroUsuarioTests(TestCase):
         form = RegistroUsuarioForm(data=data)
         self.assertFalse(form.is_valid())
         self.assertIn("RUT chileno válido", str(form.errors))
+
+    def test_registro_acepta_email_de_hasta_40_caracteres(self):
+        data = self.datos_validos("lider_cuadrilla")
+        data["email"] = "persona.12345678901234567890@example.com"
+        form = RegistroUsuarioForm(data=data)
+        self.assertEqual(len(data["email"]), 40)
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_registro_rechaza_email_de_mas_de_40_caracteres(self):
+        data = self.datos_validos("lider_cuadrilla")
+        data["email"] = "persona.123456789012345678901@example.com"
+        form = RegistroUsuarioForm(data=data)
+        self.assertGreater(len(data["email"]), 40)
+        self.assertFalse(form.is_valid())
+        self.assertIn("at most 40 characters", str(form.errors))
+
+    def test_registro_rechaza_email_con_formato_invalido(self):
+        data = self.datos_validos("lider_cuadrilla")
+        data["email"] = "persona.12345678901234567890"
+        form = RegistroUsuarioForm(data=data)
+        self.assertLessEqual(len(data["email"]), 40)
+        self.assertFalse(form.is_valid())
+        self.assertIn("Enter a valid email address", str(form.errors))
+
+    def test_registro_por_post_acepta_email_de_40_caracteres(self):
+        data = self.datos_validos("lider_cuadrilla")
+        data["email"] = "persona.12345678901234567890@example.com"
+        response = self.client.post("/usuarios/registro/", data)
+        self.assertRedirects(response, "/")
+        self.assertTrue(User.objects.filter(email=data["email"]).exists())
+
+    def test_validador_global_permite_email_hasta_40_caracteres(self):
+        data = self.datos_validos("lider_cuadrilla")
+        data["email"] = "persona.12345678901234567890@example.com"
+        validate_form_input_lengths(data)
 
     def test_login_bloquea_sexto_intento_fallido(self):
         user = User.objects.create_user(

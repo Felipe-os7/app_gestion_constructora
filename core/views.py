@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib.messages import get_messages
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
-from django.core.mail import send_mail
+from django.core.mail import EmailMessage
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpResponse
@@ -40,6 +40,7 @@ from .services import DashboardStatsService
 from .sync import ensure_fresh
 from .validators import (
     validate_form_input_lengths,
+    validate_no_malicious_content,
     validate_person_name,
     validate_plain_text,
     validate_safe_text,
@@ -78,9 +79,9 @@ def _first_form_error(form):
     return "Los datos enviados no son válidos."
 
 
-def _validate_post_input_lengths(request, redirect_name, **redirect_kwargs):
+def _validate_post_input_lengths(request, redirect_name, *, limits=None, **redirect_kwargs):
     try:
-        validate_form_input_lengths(request.POST)
+        validate_form_input_lengths(request.POST, limits=limits)
     except ValidationError as error:
         messages.error(request, error.messages[0])
         return redirect(redirect_name, **redirect_kwargs)
@@ -780,6 +781,50 @@ def eliminar_cuadrilla(request, cuadrilla_id):
 # ======================
 # INCIDENCIAS
 # ======================
+def _limpiar_descripcion_incidencia(raw):
+    """Texto simple, de largo y líneas acotados, sin código ni enlaces."""
+    maximo = getattr(settings, "INCIDENT_DESCRIPTION_MAX_LENGTH", 500)
+    minimo = getattr(settings, "INCIDENT_DESCRIPTION_MIN_LENGTH", 5)
+    max_lineas = getattr(settings, "INCIDENT_DESCRIPTION_MAX_LINES", 10)
+    texto = clean_text(
+        raw, "la descripción", required=True, max_length=maximo,
+        validators=(validate_safe_text, validate_no_malicious_content),
+    )
+    texto = texto.replace("\r\n", "\n").replace("\r", "\n")
+    if len(texto) < minimo:
+        raise ValidationError(f"La descripción debe tener al menos {minimo} caracteres.")
+    lineas = [linea.strip() for linea in texto.split("\n")]
+    if len([linea for linea in lineas if linea]) > max_lineas:
+        raise ValidationError(f"La descripción no puede tener más de {max_lineas} líneas.")
+    # Evita rellenar el correo con saltos de línea.
+    texto = "\n".join(lineas)
+    while "\n\n\n" in texto:
+        texto = texto.replace("\n\n\n", "\n\n")
+    return texto
+
+
+def _verificar_limite_incidencias(user):
+    """Límite por minuto por usuario y global. Debe llamarse dentro de transaction.atomic()."""
+    desde = timezone.now() - timedelta(seconds=60)
+    reciente = Incidencia.objects.filter(fecha__gte=desde)
+    por_usuario = getattr(settings, "INCIDENT_MAX_PER_MINUTE", 3)
+    total = getattr(settings, "INCIDENT_MAX_PER_MINUTE_GLOBAL", 15)
+    if reciente.filter(registrado_por=user).count() >= por_usuario:
+        raise ValidationError(
+            f"Has alcanzado el límite de {por_usuario} incidencias por minuto. Espera un momento e inténtalo de nuevo."
+        )
+    if reciente.count() >= total:
+        raise ValidationError("Se están registrando demasiadas incidencias. Inténtalo de nuevo en un minuto.")
+
+
+def _una_linea(texto):
+    """Sin saltos de línea: evita inyección de cabeceras en el asunto del correo."""
+    return " ".join(str(texto).split())[:150]
+
+def pagina_no_encontrada(request, exception):
+    return render(request, "core/404.html", status=404)
+
+
 @login_required
 def registrar_incidencia(request):
     if request.method != "POST":
@@ -788,7 +833,11 @@ def registrar_incidencia(request):
             if not is_jefe_obra(request.user) else Cuadrilla.objects.all(),
         })
 
-    length_error = _validate_post_input_lengths(request, "registrar_incidencia")
+    max_desc = getattr(settings, "INCIDENT_DESCRIPTION_MAX_LENGTH", 500)
+    # Tope por campo antes de procesar nada (el resto de campos conserva el límite general).
+    length_error = _validate_post_input_lengths(
+        request, "registrar_incidencia", limits={"descripcion": max_desc * 2},
+    )
     if length_error:
         return length_error
 
@@ -806,26 +855,35 @@ def registrar_incidencia(request):
                 raise ValidationError("El trabajador no pertenece a la cuadrilla seleccionada.")
 
         tipo = parse_choice(request.POST.get("tipo"), Incidencia.TIPO_CHOICES, "El tipo de incidencia", default="otro")
-        descripcion = clean_text(
-            request.POST.get("descripcion"), "la descripción",
-            required=True, max_length=2000, validators=(validate_safe_text,),
-        )
-        incidencia = Incidencia(
-            cuadrilla=cuadrilla, trabajador=trabajador, tipo=tipo,
-            descripcion=descripcion, registrado_por=request.user,
-        )
-        incidencia.full_clean()
-        incidencia.save()
+        descripcion = _limpiar_descripcion_incidencia(request.POST.get("descripcion"))
+
+        # El bloqueo de la fila del usuario serializa sus envíos simultáneos: sin él,
+        # 20 peticiones en paralelo podrían pasar todas la comprobación del límite.
+        with transaction.atomic():
+            User.objects.select_for_update().get(pk=request.user.pk)
+            _verificar_limite_incidencias(request.user)
+            incidencia = Incidencia(
+                cuadrilla=cuadrilla, trabajador=trabajador, tipo=tipo,
+                descripcion=descripcion, registrado_por=request.user,
+            )
+            incidencia.full_clean()
+            incidencia.save()
     except ValidationError as error:
+        logger.warning(
+            "Incidencia rechazada (usuario=%s, ip=%s): %s",
+            request.user.pk, request.META.get("REMOTE_ADDR"), error.messages[0],
+        )
         return _fail(request, error.messages[0], "registrar_incidencia")
 
-    destinatarios = list(
-        User.objects.filter(perfil__rol="jefe_obra", email__isnull=False)
-        .exclude(email="")
-        .values_list("email", flat=True)
-    )
+    destinatarios = []
+    if not getattr(settings, "INCIDENT_ONLY_CONFIGURED_EMAILS", False):
+        destinatarios = list(
+            User.objects.filter(perfil__rol="jefe_obra", email__isnull=False)
+            .exclude(email="")
+            .values_list("email", flat=True)
+        )
     destinatarios.extend(getattr(settings, "INCIDENT_NOTIFICATION_EMAILS", []))
-    destinatarios = list(dict.fromkeys(destinatarios))
+    destinatarios = list(dict.fromkeys(destinatarios))[: getattr(settings, "INCIDENT_MAX_RECIPIENTS", 10)]
 
     if not destinatarios:
         messages.warning(
@@ -834,9 +892,9 @@ def registrar_incidencia(request):
         )
         return redirect("cuadrilla")
     try:
-        send_mail(
-            f"{getattr(settings, 'INCIDENT_EMAIL_SUBJECT_PREFIX', '')} Nueva incidencia en {cuadrilla.nombre}",
-            (
+        mensaje = EmailMessage(
+            subject=_una_linea(f"{getattr(settings, 'INCIDENT_EMAIL_SUBJECT_PREFIX', '')} Nueva incidencia en {cuadrilla.nombre}"),
+            body=(
                 f"Cuadrilla: {cuadrilla.nombre}\n"
                 f"Proyecto: {cuadrilla.proyecto.nombre}\n"
                 f"Tipo: {incidencia.get_tipo_display()}\n"
@@ -844,9 +902,30 @@ def registrar_incidencia(request):
                 f"Registrada por: {request.user.get_full_name() or request.user.username}\n\n"
                 f"{incidencia.descripcion}"
             ),
-            settings.DEFAULT_FROM_EMAIL,
-            destinatarios,
-            fail_silently=False,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=destinatarios,
+        )
+        # Opciones propias de Mailtrap (Anymail las ignora si se usa otro backend).
+        mensaje.esp_extra = {
+            "category": "Incidencias",
+            "custom_variables": {"incidencia_id": str(incidencia.pk), "tipo": incidencia.tipo},
+        }
+        enviados = mensaje.send(fail_silently=False)
+        if enviados < 1:
+            logger.warning(
+                "El proveedor no confirmó el correo de la incidencia %s (destinatarios=%s)",
+                incidencia.pk,
+                len(destinatarios),
+            )
+            messages.warning(
+                request,
+                "La incidencia quedó registrada, pero el proveedor no confirmó el envío del correo.",
+            )
+            return redirect("cuadrilla")
+        logger.info(
+            "Correo de incidencia enviado (incidencia=%s, destinatarios=%s)",
+            incidencia.pk,
+            len(destinatarios),
         )
     except Exception:
         # Un fallo SMTP no debe convertir una incidencia ya guardada en un error 500.

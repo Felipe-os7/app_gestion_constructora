@@ -1,6 +1,6 @@
 from django import forms
 from .models import Proyecto, Cuadrilla, Incidencia
-from .validators import validate_safe_text, validate_plain_text
+from .validators import validate_safe_text, validate_plain_text, validate_no_malicious_content
 from django.utils import timezone
 from datetime import timedelta
 
@@ -121,8 +121,10 @@ class CuadrillaForm(forms.ModelForm):
 
 class IncidenciaForm(forms.ModelForm):
     descripcion = forms.CharField(
-        validators=[validate_safe_text],
-        widget=forms.Textarea(attrs={"rows": 4}),
+        min_length=5,
+        max_length=500,
+        validators=[validate_safe_text, validate_no_malicious_content],
+        widget=forms.Textarea(attrs={"rows": 4, "maxlength": 500}),
     )
     class Meta:
         model = Incidencia

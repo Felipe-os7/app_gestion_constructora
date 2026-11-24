@@ -113,10 +113,11 @@ class RegistroUsuarioForm(UserCreationForm):
     """
     email = forms.EmailField(
         required=True,
-        max_length=MAX_FORM_INPUT_LENGTH,
+        max_length=40,
         widget=forms.EmailInput(attrs={
             'class': 'form-control',
-            'placeholder': 'Ingresa tu correo electrónico'
+            'placeholder': 'Ingresa tu correo electrónico',
+            'maxlength': '40',
         }),
         label="Correo electrónico"
     )

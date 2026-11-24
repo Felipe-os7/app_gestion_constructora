@@ -31,19 +31,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    document.querySelectorAll('form input[name], form textarea[name]').forEach(function(input) {
-        if (input.type !== 'hidden') {
-            input.addEventListener('input', function() {
-                if (Array.from(input.value).length > maxInputLength) {
-                    showAlert(
-                        'Este campo no puede superar 20 caracteres.',
-                        'warning'
-                    );
-                }
-            });
-        }
-    });
-
     // Configuración de validadores por tipo de campo
     const validators = {
         presupuesto: {
@@ -337,7 +324,6 @@ document.addEventListener('DOMContentLoaded', function() {
     forms.forEach(form => {
         form.addEventListener('submit', function(e) {
             let isValid = true;
-            let lengthError = false;
             
             const inputs = form.querySelectorAll('input[name], select[name], textarea[name]');
             inputs.forEach(input => {
@@ -345,19 +331,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 const result = validateField(input, fieldName, validators);
                 if (!result.valid) {
                     isValid = false;
-                    if (Array.from(input.value).length > 20) {
-                        lengthError = true;
-                    }
                 }
             });
 
             if (!isValid) {
                 e.preventDefault();
                 showAlert(
-                    lengthError
-                        ? 'Este campo no puede superar 20 caracteres.'
-                        : 'Por favor, corrija los errores en el formulario',
-                    lengthError ? 'warning' : 'danger'
+                    'Por favor, corrija los errores en el formulario',
+                    'danger'
                 );
             }
         });
@@ -375,10 +356,10 @@ function validateField(input, fieldName, validators) {
     const errorDiv = input.parentElement.querySelector('.field-error');
     let result = { valid: true };
 
-    if (input.type !== 'hidden' && Array.from(input.value).length > 20) {
+    if (input.type !== 'hidden' && Array.from(input.value).length > getInputMaxLength(input)) {
         result = {
             valid: false,
-            message: 'Este campo no puede superar 20 caracteres.'
+            message: `Este campo no puede superar ${getInputMaxLength(input)} caracteres.`
         };
     }
 
@@ -404,6 +385,10 @@ function validateField(input, fieldName, validators) {
     }
 
     return result;
+}
+
+function getInputMaxLength(input) {
+    return input.name === 'email' ? 40 : 20;
 }
 
 /**

@@ -16,7 +16,7 @@ def registro_view(request):
     
     if request.method == 'POST':
         try:
-            validate_form_input_lengths(request.POST)
+            validate_form_input_lengths(request.POST, limits={"email": 40})
         except ValidationError as error:
             messages.error(request, error.messages[0])
             return redirect('registro')

@@ -1,10 +1,13 @@
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import User
+from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
 from decimal import Decimal
 from datetime import timedelta
+
+from .validators import validate_no_malicious_content, validate_safe_text
 
 class Proyecto(models.Model):
     MAX_PRESUPUESTO = Decimal("1000000000.00")
@@ -380,5 +383,12 @@ class Incidencia(models.Model):
 
     def clean(self):
         super().clean()
+        # Defensa en profundidad: aunque una vista olvide validar, el modelo no
+        # acepta descripciones largas ni con código/enlaces (se reenvían por correo).
+        maximo = getattr(settings, "INCIDENT_DESCRIPTION_MAX_LENGTH", 500)
+        if len(self.descripcion or "") > maximo:
+            raise ValidationError(f"La descripción no puede superar {maximo} caracteres.")
+        validate_safe_text(self.descripcion)
+        validate_no_malicious_content(self.descripcion)
         if self.trabajador_id and self.trabajador.cuadrilla_id != self.cuadrilla_id:
             raise ValidationError("El trabajador debe pertenecer a la cuadrilla de la incidencia.")
