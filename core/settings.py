@@ -38,7 +38,7 @@ def _env_list(name, default=()):
 # en el servidor la aplicación quedaba en modo debug (páginas de error con
 # código, variables y configuración visibles). Ahora el defecto es False.
 # En desarrollo local define DJANGO_DEBUG=True en tu archivo .env.
-DEBUG = _env_bool('DJANGO_DEBUG', False)
+DEBUG = _env_bool('DJANGO_DEBUG', True)
 
 RUNNING_TESTS = len(sys.argv) > 1 and sys.argv[1] == 'test'
 
