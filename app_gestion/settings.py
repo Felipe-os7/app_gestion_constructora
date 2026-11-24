@@ -170,10 +170,6 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_DIRS = [
-    BASE_DIR / 'core' / 'static',
-    BASE_DIR / 'usuarios' / 'static',
-]
 
 # Con DEBUG=False Django ya no sirve los archivos estáticos; en Render los sirve
 # WhiteNoise. Si el paquete está instalado se activa solo (pip install whitenoise
